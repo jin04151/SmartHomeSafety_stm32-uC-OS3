@@ -1019,7 +1019,7 @@ static CPU_BOOLEAN AppDangerStillActive(void)
 /* ---------------- USART / string helpers ---------------- */
 static void AppTrace(const CPU_CHAR *msg)
 {
-    APP_TRACE_DBG(("%s", msg));
+    UsartPrint((const char *)msg);
 }
 
 static CPU_BOOLEAN AppUsartTryGetLine(CPU_CHAR *buf, CPU_INT16U buf_len)
