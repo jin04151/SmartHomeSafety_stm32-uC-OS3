@@ -24,7 +24,7 @@
 
 /* ---------------- Priority ---------------- */
 #define APP_CFG_EMERGENCY_TASK_PRIO      3u
-#define APP_CFG_SECsURITY_TASK_PRIO       4u
+#define APP_CFG_SECURITY_TASK_PRIO       4u
 #define APP_CFG_INPUT_TASK_PRIO          5u
 #define APP_CFG_STATE_TASK_PRIO          6u
 #define APP_CFG_USART_TASK_PRIO          7u
@@ -518,7 +518,7 @@ static void AppTaskOutput(void *p_arg)
 static void AppTaskMonitor(void *p_arg)
 {
     OS_ERR err;
-    //BitAction flame_raw;
+    BitAction flame_raw;
 
     (void)p_arg;
 
