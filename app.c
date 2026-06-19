@@ -729,16 +729,6 @@ static void AppGpioInit(void)
     gpio.GPIO_Pin = PIR_GPIO_PIN;
     GPIO_Init(PIR_GPIO_PORT, &gpio);
 
-    gpio.GPIO_Mode  = GPIO_Mode_IN;
-    gpio.GPIO_OType = GPIO_OType_PP;
-    gpio.GPIO_Speed = GPIO_Speed_2MHz;
-    gpio.GPIO_PuPd  = GPIO_PuPd_DOWN;
-    gpio.GPIO_Pin   = GAS_GPIO_PIN | PIR_GPIO_PIN;
-    GPIO_Init(GPIOA, &gpio);
-
-    gpio.GPIO_Pin = FLAME_GPIO_PIN;
-    GPIO_Init(FLAME_GPIO_PORT, &gpio);
-
     gpio.GPIO_PuPd = GPIO_PuPd_NOPULL;
     gpio.GPIO_Pin  = BTN_GPIO_PIN;
     GPIO_Init(BTN_GPIO_PORT, &gpio);
