@@ -14,6 +14,7 @@
 */
 
 #include  <includes.h>
+#include "stm32f4xx_tim.h"
 #include  "stm32f4xx.h"
 #include  "stm32f4xx_rcc.h"
 #include  "stm32f4xx_gpio.h"
@@ -23,7 +24,7 @@
 
 /* ---------------- Priority ---------------- */
 #define APP_CFG_EMERGENCY_TASK_PRIO      3u
-#define APP_CFG_SECURITY_TASK_PRIO       4u
+#define APP_CFG_SECsURITY_TASK_PRIO       4u
 #define APP_CFG_INPUT_TASK_PRIO          5u
 #define APP_CFG_STATE_TASK_PRIO          6u
 #define APP_CFG_USART_TASK_PRIO          7u
@@ -65,16 +66,16 @@
 #define BTN_EXTI_PIN_SRC                 EXTI_PinSource13
 
 /* ---------------- Output pin example ----------------
- * LED1 alarm    -> PA5  (LED1 module RED)
- * LED2 power    -> PA7  (LED2 module RED)
+ * LED1 alarm    -> PB8  (LED1 module RED)
+ * LED2 power    -> PB9  (LED2 module RED)
  * LED3 status   -> PB10 (LED2 module GREEN)
  * Buzzer        -> PD12
  * Servo         -> placeholder function. If PWM is ready, replace AppServoSetAngle().
  */
-#define LED_GPIO_PORT     GPIOA
-#define LED_ALARM_PIN     GPIO_Pin_5
-#define LED_POWER_PIN     GPIO_Pin_7
-#define LED_STATUS_PIN    GPIO_Pin_6
+#define LED_GPIO_PORT     GPIOB
+#define LED_ALARM_PIN     GPIO_Pin_8
+#define LED_POWER_PIN     GPIO_Pin_9
+#define LED_STATUS_PIN    GPIO_Pin_10
 
 #define BUZZER_GPIO_PORT                 GPIOD
 #define BUZZER_GPIO_PIN                  GPIO_Pin_12
@@ -145,6 +146,8 @@ static void AppServoSetAngle (CPU_INT08U degree);
 static CPU_BOOLEAN AppDangerStillActive(void);
 
 static void Setup_Usart3(void);
+static void Setup_Servo_PWM(void);
+
 
 /* ---------------- Kernel objects / globals ---------------- */
 static OS_TCB  AppTaskStartTCB;
@@ -225,35 +228,22 @@ static void AppTaskStart(void *p_arg)
 {
     OS_ERR err;
     (void)p_arg;
-
     BSP_Init();
     BSP_Tick_Init();
     AppExtiInit();
-
     Setup_Usart3();
-
-#if OS_CFG_STAT_TASK_EN > 0u
+    Setup_Servo_PWM();
+	#if OS_CFG_STAT_TASK_EN > 0u
     OSStatTaskCPUUsageInit(&err);
-#endif
-
-#ifdef CPU_CFG_INT_DIS_MEAS_EN
+	#endif
+	#ifdef CPU_CFG_INT_DIS_MEAS_EN
     CPU_IntDisMeasMaxCurReset();
-#endif
-
+	#endif
     AppObjCreate();
     AppTaskCreate();
-
     AppTrace("\r\n[BOOT] Smart Home Safety System Start\r\n");
     AppPrintHelp();
-
-    while (DEF_TRUE) {
-        OSTimeDlyHMSM(0u,
-                  0u,
-                  1u,
-                  0u,
-                  OS_OPT_TIME_HMSM_STRICT,
-                  &err);
-    }
+    OSTaskDel((OS_TCB *)0, &err);
 }
 
 /* ---------------- Emergency: gas/flame ---------------- */
@@ -528,18 +518,11 @@ static void AppTaskOutput(void *p_arg)
 static void AppTaskMonitor(void *p_arg)
 {
     OS_ERR err;
-    BitAction flame_raw;
+    //BitAction flame_raw;
 
     (void)p_arg;
 
     while (DEF_TRUE) {
-        flame_raw = GPIO_ReadInputDataBit(FLAME_GPIO_PORT, FLAME_GPIO_PIN);
-
-        if (flame_raw == Bit_SET) {
-            GPIO_SetBits(GPIOB, GPIO_Pin_0);
-        } else {
-            GPIO_ResetBits(GPIOB, GPIO_Pin_0);
-        }
 
         OSTimeDlyHMSM(0u,
                       0u,
@@ -712,10 +695,12 @@ static void AppGpioInit(void)
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_SYSCFG,
                            ENABLE);
 
-    gpio.GPIO_Mode  = GPIO_Mode_IN;
+    gpio.GPIO_Mode  = GPIO_Mode_OUT;
     gpio.GPIO_OType = GPIO_OType_PP;
     gpio.GPIO_Speed = GPIO_Speed_2MHz;
-    gpio.GPIO_PuPd  = GPIO_PuPd_DOWN;
+    gpio.GPIO_PuPd  = GPIO_PuPd_NOPULL;
+    gpio.GPIO_Pin   = LED_ALARM_PIN | LED_POWER_PIN | LED_STATUS_PIN;
+    GPIO_Init(LED_GPIO_PORT, &gpio);
 
     /* GAS: PA0 */
     gpio.GPIO_Pin = GAS_GPIO_PIN;
@@ -987,13 +972,11 @@ static void AppPowerOn(void)
 
 static void AppServoSetAngle(CPU_INT08U degree)
 {
-    /*
-     * Replace this with TIM PWM code when servo PWM is ready.
-     *
-     * 0 degree  -> about 1.0 ms pulse
-     * 90 degree -> about 1.5 ms pulse
-     */
-    (void)degree;
+	CPU_INT16U pulse_us;
+
+	    pulse_us = 1000u + ((CPU_INT16U)degree * 1000u / 180u);
+
+	    TIM_SetCompare1(TIM1, pulse_us);
 }
 
 static CPU_BOOLEAN AppDangerStillActive(void)
@@ -1123,4 +1106,44 @@ static void Setup_Usart3(void)
 
     USART_Init(USART3, &usart_init);
     USART_Cmd(USART3, ENABLE);
+}
+
+static void Setup_Servo_PWM(void)
+{
+    GPIO_InitTypeDef         gpio_init = {0};
+    TIM_TimeBaseInitTypeDef  tim_init  = {0};
+    TIM_OCInitTypeDef        oc_init   = {0};
+
+    /* GPIOE clock + TIM1 clock */
+    RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOE, ENABLE);
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM1, ENABLE);
+
+    gpio_init.GPIO_Pin   = GPIO_Pin_9;
+    gpio_init.GPIO_Mode  = GPIO_Mode_AF;
+    gpio_init.GPIO_OType = GPIO_OType_PP;
+    gpio_init.GPIO_PuPd  = GPIO_PuPd_NOPULL;
+    gpio_init.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOE, &gpio_init);
+
+    GPIO_PinAFConfig(GPIOE, GPIO_PinSource9, GPIO_AF_TIM1);
+
+    /* TIM1: 180MHz / (180-1+1) / (20000-1+1) = 50Hz (20ms) */
+    tim_init.TIM_Prescaler     = 180 - 1;       /* 1MHz tick */
+    tim_init.TIM_Period        = 20000 - 1;     /* 20ms period */
+    tim_init.TIM_CounterMode   = TIM_CounterMode_Up;
+    tim_init.TIM_ClockDivision = TIM_CKD_DIV1;
+    TIM_TimeBaseInit(TIM1, &tim_init);
+
+    /* TIM1 CH1 PWM mode */
+    oc_init.TIM_OCMode      = TIM_OCMode_PWM1;
+    oc_init.TIM_OutputState = TIM_OutputState_Enable;
+    oc_init.TIM_Pulse       = 1000; 
+    oc_init.TIM_OCPolarity  = TIM_OCPolarity_High;
+    TIM_OC1Init(TIM1, &oc_init);
+
+    TIM_OC1PreloadConfig(TIM1, TIM_OCPreload_Enable);
+    TIM_ARRPreloadConfig(TIM1, ENABLE);
+
+    TIM_CtrlPWMOutputs(TIM1, ENABLE);
+    TIM_Cmd(TIM1, ENABLE);
 }
