@@ -144,6 +144,8 @@ static void AppPowerOn       (void);
 static void AppServoSetAngle (CPU_INT08U degree);
 static CPU_BOOLEAN AppDangerStillActive(void);
 
+static void Setup_Usart3(void);
+
 /* ---------------- Kernel objects / globals ---------------- */
 static OS_TCB  AppTaskStartTCB;
 static CPU_STK AppTaskStartStk[APP_CFG_TASK_START_STK_SIZE];
@@ -228,6 +230,8 @@ static void AppTaskStart(void *p_arg)
     BSP_Tick_Init();
     AppExtiInit();
 
+    Setup_Usart3();
+
 #if OS_CFG_STAT_TASK_EN > 0u
     OSStatTaskCPUUsageInit(&err);
 #endif
@@ -243,7 +247,6 @@ static void AppTaskStart(void *p_arg)
     AppPrintHelp();
 
     while (DEF_TRUE) {
-
         OSTimeDlyHMSM(0u,
                   0u,
                   1u,
@@ -844,7 +847,7 @@ static void AppExti1ISR(void)
 
 static void AppExti2ISR(void)
 {
-    
+
 }
 
 static void AppExti15_10ISR(void)
@@ -1100,4 +1103,34 @@ static CPU_BOOLEAN AppStrEq(const CPU_CHAR *a, const CPU_CHAR *b)
     }
 
     return DEF_FALSE;
+}
+/* ---------------- USART3 SETUP ---------------- */
+static void Setup_Usart3(void)
+{
+    GPIO_InitTypeDef gpio_init = {0};
+    USART_InitTypeDef usart_init = {0};
+
+    RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD, ENABLE);
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_USART3, ENABLE);
+
+    GPIO_PinAFConfig(GPIOD, GPIO_PinSource8, GPIO_AF_USART3);
+    GPIO_PinAFConfig(GPIOD, GPIO_PinSource9, GPIO_AF_USART3);
+
+    gpio_init.GPIO_Pin   = GPIO_Pin_8 | GPIO_Pin_9;
+    gpio_init.GPIO_Mode  = GPIO_Mode_AF;
+    gpio_init.GPIO_OType = GPIO_OType_PP;
+    gpio_init.GPIO_PuPd  = GPIO_PuPd_UP;
+    gpio_init.GPIO_Speed = GPIO_Speed_50MHz;
+
+    GPIO_Init(GPIOD, &gpio_init);
+
+    usart_init.USART_BaudRate = 115200;
+    usart_init.USART_WordLength = USART_WordLength_8b;
+    usart_init.USART_StopBits = USART_StopBits_1;
+    usart_init.USART_Parity = USART_Parity_No;
+    usart_init.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+    usart_init.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
+
+    USART_Init(USART3, &usart_init);
+    USART_Cmd(USART3, ENABLE);
 }
