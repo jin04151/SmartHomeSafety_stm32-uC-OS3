@@ -52,11 +52,11 @@
 #define FLAME_EXTI_PORT_SRC              EXTI_PortSourceGPIOF
 #define FLAME_EXTI_PIN_SRC               EXTI_PinSource15
 
-#define PIR_GPIO_PORT                    GPIOA
-#define PIR_GPIO_PIN                     GPIO_Pin_2
-#define PIR_EXTI_LINE                    EXTI_Line2
-#define PIR_EXTI_PORT_SRC                EXTI_PortSourceGPIOA
-#define PIR_EXTI_PIN_SRC                 EXTI_PinSource2
+#define PIR_GPIO_PORT                    GPIOF
+#define PIR_GPIO_PIN                     GPIO_Pin_14
+#define PIR_EXTI_LINE                    EXTI_Line14
+#define PIR_EXTI_PORT_SRC                EXTI_PortSourceGPIOF
+#define PIR_EXTI_PIN_SRC                 EXTI_PinSource14
 
 #define BTN_GPIO_PORT                    GPIOC
 #define BTN_GPIO_PIN                     GPIO_Pin_13
@@ -709,15 +709,22 @@ static void AppGpioInit(void)
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_SYSCFG,
                            ENABLE);
 
-    gpio.GPIO_Mode  = GPIO_Mode_OUT;
+    gpio.GPIO_Mode  = GPIO_Mode_IN;
     gpio.GPIO_OType = GPIO_OType_PP;
     gpio.GPIO_Speed = GPIO_Speed_2MHz;
-    gpio.GPIO_PuPd  = GPIO_PuPd_NOPULL;
-    gpio.GPIO_Pin   = LED_ALARM_PIN | LED_POWER_PIN | LED_STATUS_PIN;
-    GPIO_Init(LED_GPIO_PORT, &gpio);
+    gpio.GPIO_PuPd  = GPIO_PuPd_DOWN;
 
-    gpio.GPIO_Pin = BUZZER_GPIO_PIN;
-    GPIO_Init(BUZZER_GPIO_PORT, &gpio);
+    /* GAS: PA0 */
+    gpio.GPIO_Pin = GAS_GPIO_PIN;
+    GPIO_Init(GAS_GPIO_PORT, &gpio);
+
+    /* FLAME: PF15 / D2 */
+    gpio.GPIO_Pin = FLAME_GPIO_PIN;
+    GPIO_Init(FLAME_GPIO_PORT, &gpio);
+
+    /* PIR: PF14 / D4 */
+    gpio.GPIO_Pin = PIR_GPIO_PIN;
+    GPIO_Init(PIR_GPIO_PORT, &gpio);
 
     gpio.GPIO_Mode  = GPIO_Mode_IN;
     gpio.GPIO_OType = GPIO_OType_PP;
@@ -837,25 +844,16 @@ static void AppExti1ISR(void)
 
 static void AppExti2ISR(void)
 {
-    OS_ERR err;
-
-    if (EXTI_GetITStatus(PIR_EXTI_LINE) != RESET) {
-        EXTI_ClearITPendingBit(PIR_EXTI_LINE);
-
-        OSSemPost(&AppPirSem,
-                  OS_OPT_POST_1,
-                  &err);
-    }
+    
 }
 
 static void AppExti15_10ISR(void)
 {
     OS_ERR err;
 
+    /* FLAME: PF15 / D2 */
     if (EXTI_GetITStatus(FLAME_EXTI_LINE) != RESET) {
         EXTI_ClearITPendingBit(FLAME_EXTI_LINE);
-
-        GPIO_SetBits(LED_GPIO_PORT, LED_ALARM_PIN);
 
         OSFlagPost(&AppEmergencyFlags,
                    APP_FLAG_FLAME,
@@ -863,6 +861,16 @@ static void AppExti15_10ISR(void)
                    &err);
     }
 
+    /* PIR: PF14 / D4 */
+    if (EXTI_GetITStatus(PIR_EXTI_LINE) != RESET) {
+        EXTI_ClearITPendingBit(PIR_EXTI_LINE);
+
+        OSSemPost(&AppPirSem,
+                  OS_OPT_POST_1,
+                  &err);
+    }
+
+    /* Button: PC13 */
     if (EXTI_GetITStatus(BTN_EXTI_LINE) != RESET) {
         EXTI_ClearITPendingBit(BTN_EXTI_LINE);
 
