@@ -729,7 +729,7 @@ static void AppGpioInit(void)
     gpio.GPIO_Pin = FLAME_GPIO_PIN;
     GPIO_Init(FLAME_GPIO_PORT, &gpio);
 
-    /* 踰꾪듉 �엯�젰: PC13 */
+    /* 甕곌쑵�뱣 占쎌뿯占쎌젾: PC13 */
     gpio.GPIO_PuPd = GPIO_PuPd_NOPULL;
     gpio.GPIO_Pin  = BTN_GPIO_PIN;
     GPIO_Init(BTN_GPIO_PORT, &gpio);
@@ -1019,7 +1019,12 @@ static CPU_BOOLEAN AppDangerStillActive(void)
 /* ---------------- USART / string helpers ---------------- */
 static void AppTrace(const CPU_CHAR *msg)
 {
-    UsartPrint((const char *)msg);
+    while (*msg != '\0') {
+        while (USART_GetFlagStatus(USART3, USART_FLAG_TXE) == RESET) {
+        }
+        USART_SendData(USART3, (uint16_t)(*msg));
+        msg++;
+    }
 }
 
 static CPU_BOOLEAN AppUsartTryGetLine(CPU_CHAR *buf, CPU_INT16U buf_len)
