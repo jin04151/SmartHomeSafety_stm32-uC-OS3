@@ -65,16 +65,16 @@
 #define BTN_EXTI_PIN_SRC                 EXTI_PinSource13
 
 /* ---------------- Output pin example ----------------
- * LED1 alarm    -> PB0
- * LED2 appliance-> PB7
- * LED3 status   -> PB14
+ * LED1 alarm    -> PA5  (LED1 module RED)
+ * LED2 power    -> PA7  (LED2 module RED)
+ * LED3 status   -> PB10 (LED2 module GREEN)
  * Buzzer        -> PD12
  * Servo         -> placeholder function. If PWM is ready, replace AppServoSetAngle().
  */
-#define LED_GPIO_PORT                    GPIOB
-#define LED_ALARM_PIN                    GPIO_Pin_0
-#define LED_POWER_PIN                    GPIO_Pin_7
-#define LED_STATUS_PIN                   GPIO_Pin_14
+#define LED_GPIO_PORT     GPIOA
+#define LED_ALARM_PIN     GPIO_Pin_5
+#define LED_POWER_PIN     GPIO_Pin_7
+#define LED_STATUS_PIN    GPIO_Pin_6
 
 #define BUZZER_GPIO_PORT                 GPIOD
 #define BUZZER_GPIO_PIN                  GPIO_Pin_12
@@ -729,7 +729,7 @@ static void AppGpioInit(void)
     gpio.GPIO_Pin = FLAME_GPIO_PIN;
     GPIO_Init(FLAME_GPIO_PORT, &gpio);
 
-    /* 버튼 입력: PC13 */
+    /* 踰꾪듉 �엯�젰: PC13 */
     gpio.GPIO_PuPd = GPIO_PuPd_NOPULL;
     gpio.GPIO_Pin  = BTN_GPIO_PIN;
     GPIO_Init(BTN_GPIO_PORT, &gpio);
