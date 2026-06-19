@@ -729,7 +729,6 @@ static void AppGpioInit(void)
     gpio.GPIO_Pin = FLAME_GPIO_PIN;
     GPIO_Init(FLAME_GPIO_PORT, &gpio);
 
-    /* 甕곌쑵�뱣 占쎌뿯占쎌젾: PC13 */
     gpio.GPIO_PuPd = GPIO_PuPd_NOPULL;
     gpio.GPIO_Pin  = BTN_GPIO_PIN;
     GPIO_Init(BTN_GPIO_PORT, &gpio);
