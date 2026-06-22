@@ -35,26 +35,26 @@
 #define APP_EVENT_Q_SIZE                 16u
 #define APP_CMD_LINE_LEN                 40u
 
-/* ---------------- EXTI input pin example ----------------
- * Gas   DO -> PA0, EXTI0
- * Flame DO -> PA1, EXTI1
- * PIR   DO -> PA2, EXTI2
+/* ---------------- EXTI input pins ----------------
+ * Gas   D0 -> D8  / PF12, EXTI12
+ * Flame DO -> D2  / PF15, EXTI15
+ * PIR   DO -> D4  / PF14, EXTI14
  * Button   -> PC13, EXTI13
  */
-#define GAS_GPIO_PORT                    GPIOA
-#define GAS_GPIO_PIN                     GPIO_Pin_0
-#define GAS_EXTI_LINE                    EXTI_Line0
-#define GAS_EXTI_PORT_SRC                EXTI_PortSourceGPIOA
-#define GAS_EXTI_PIN_SRC                 EXTI_PinSource0
+#define GAS_GPIO_PORT                    GPIOF
+#define GAS_GPIO_PIN                     GPIO_Pin_12      /* D8 / PF12 */
+#define GAS_EXTI_LINE                    EXTI_Line12
+#define GAS_EXTI_PORT_SRC                EXTI_PortSourceGPIOF
+#define GAS_EXTI_PIN_SRC                 EXTI_PinSource12
 
 #define FLAME_GPIO_PORT                  GPIOF
-#define FLAME_GPIO_PIN                   GPIO_Pin_15
+#define FLAME_GPIO_PIN                   GPIO_Pin_15      /* D2 / PF15 */
 #define FLAME_EXTI_LINE                  EXTI_Line15
 #define FLAME_EXTI_PORT_SRC              EXTI_PortSourceGPIOF
 #define FLAME_EXTI_PIN_SRC               EXTI_PinSource15
 
 #define PIR_GPIO_PORT                    GPIOF
-#define PIR_GPIO_PIN                     GPIO_Pin_14
+#define PIR_GPIO_PIN                     GPIO_Pin_14      /* D4 / PF14 */
 #define PIR_EXTI_LINE                    EXTI_Line14
 #define PIR_EXTI_PORT_SRC                EXTI_PortSourceGPIOF
 #define PIR_EXTI_PIN_SRC                 EXTI_PinSource14
@@ -65,17 +65,22 @@
 #define BTN_EXTI_PORT_SRC                EXTI_PortSourceGPIOC
 #define BTN_EXTI_PIN_SRC                 EXTI_PinSource13
 
-/* ---------------- Output pin example ----------------
- * LED1 alarm    -> PB8  (LED1 module RED)
- * LED2 power    -> PB9  (LED2 module RED)
- * LED3 status   -> PB10 (LED2 module GREEN)
- * Buzzer        -> PD12
- * Servo         -> placeholder function. If PWM is ready, replace AppServoSetAngle().
+
+/* ---------------- Output LED pins ----------------
+ * Power LED R -> D15 / PB8 : 전력 차단 빨강
+ * Power LED G -> D14 / PB9 : 전력 정상 초록
+ *
+ * Gas LED R   -> D12 / PA6 : 가스 차단 빨강
+ * Gas LED G   -> D11 / PA7 : 가스 정상 초록
  */
-#define LED_GPIO_PORT     GPIOB
-#define LED_ALARM_PIN     GPIO_Pin_8
-#define LED_POWER_PIN     GPIO_Pin_9
-#define LED_STATUS_PIN    GPIO_Pin_10
+#define POWER_LED_GPIO_PORT              GPIOB
+#define POWER_LED_CUT_RED_PIN            GPIO_Pin_8       /* D15 / PB8 */
+#define POWER_LED_NORMAL_GREEN_PIN       GPIO_Pin_9       /* D14 / PB9 */
+
+#define GAS_LED_GPIO_PORT                GPIOA
+#define GAS_LED_CUT_RED_PIN              GPIO_Pin_6       /* D12 / PA6 */
+#define GAS_LED_NORMAL_GREEN_PIN         GPIO_Pin_7       /* D11 / PA7 */
+
 
 #define BUZZER_GPIO_PORT                 GPIOD
 #define BUZZER_GPIO_PIN                  GPIO_Pin_12
@@ -91,6 +96,13 @@ typedef enum {
     APP_MODE_OUT,
     APP_MODE_EMERGENCY
 } APP_MODE;
+
+typedef enum {
+    APP_EMG_NONE = 0,
+    APP_EMG_GAS,
+    APP_EMG_FLAME,
+    APP_EMG_INTRUSION
+} APP_EMERGENCY_REASON;
 
 typedef enum {
     APP_EVENT_NONE = 0,
@@ -124,9 +136,6 @@ static void AppTaskCreate    (void);
 static void AppGpioInit      (void);
 static void AppExtiInit      (void);
 
-static void AppExti0ISR      (void);
-static void AppExti1ISR      (void);
-static void AppExti2ISR      (void);
 static void AppExti15_10ISR  (void);
 
 static void AppEventPost     (APP_EVENT_TYPE type, CPU_INT32U value);
@@ -180,6 +189,7 @@ static CPU_INT08U  AppEventWrIx;
 
 static APP_MODE    AppMode;
 static APP_MODE    AppPrevMode;
+static APP_EMERGENCY_REASON  AppEmergencyReason;
 
 static CPU_BOOLEAN AppEmergencyActive;
 static CPU_BOOLEAN AppPirDetected;
@@ -249,9 +259,11 @@ static void AppTaskStart(void *p_arg)
 /* ---------------- Emergency: gas/flame ---------------- */
 static void AppTaskEmergency(void *p_arg)
 {
-    OS_ERR   err;
-    CPU_TS   ts;
-    OS_FLAGS flags;
+    OS_ERR      err;
+    CPU_TS      ts;
+    OS_FLAGS    flags;
+    CPU_BOOLEAN post_event;
+    CPU_SR_ALLOC();
 
     (void)p_arg;
 
@@ -266,15 +278,48 @@ static void AppTaskEmergency(void *p_arg)
                            &err);
 
         if ((flags & APP_FLAG_GAS) != 0u) {
-            AppGasCount++;
-            AppTrace("[ALERT][EMERGENCY] GAS detected\r\n");
-            AppEventPost(APP_EVENT_GAS, 0u);
+            post_event = DEF_FALSE;
+
+            /*
+             * AppMode가 아니라 AppEmergencyActive로 먼저 latch.
+             * State Task가 아직 AppMode를 EMERGENCY로 바꾸기 전이어도
+             * 중복 GAS 이벤트를 막기 위함.
+             */
+            CPU_CRITICAL_ENTER();
+
+            if (AppEmergencyActive == DEF_FALSE) {
+                AppEmergencyActive = DEF_TRUE;
+                AppEmergencyReason = APP_EMG_GAS;
+                post_event = DEF_TRUE;
+            }
+
+            CPU_CRITICAL_EXIT();
+
+            if (post_event == DEF_TRUE) {
+                AppGasCount++;
+                AppTrace("[ALERT][EMERGENCY] GAS detected\r\n");
+                AppEventPost(APP_EVENT_GAS, 0u);
+            }
         }
 
         if ((flags & APP_FLAG_FLAME) != 0u) {
-            AppFlameCount++;
-            AppTrace("[ALERT][EMERGENCY] FLAME detected\r\n");
-            AppEventPost(APP_EVENT_FLAME, 0u);
+            post_event = DEF_FALSE;
+
+            CPU_CRITICAL_ENTER();
+
+            if (AppEmergencyActive == DEF_FALSE) {
+                AppEmergencyActive = DEF_TRUE;
+                AppEmergencyReason = APP_EMG_FLAME;
+                post_event = DEF_TRUE;
+            }
+
+            CPU_CRITICAL_EXIT();
+
+            if (post_event == DEF_TRUE) {
+                AppFlameCount++;
+                AppTrace("[ALERT][EMERGENCY] FLAME detected\r\n");
+                AppEventPost(APP_EVENT_FLAME, 0u);
+            }
         }
     }
 }
@@ -295,8 +340,22 @@ static void AppTaskSecurity(void *p_arg)
                   &ts,
                   &err);
 
-        AppPirCount++;
-        AppPirDetected = DEF_TRUE;
+        /*
+         * 간단한 PIR 안정화/노이즈 필터
+         */
+        OSTimeDlyHMSM(0u,
+                      0u,
+                      0u,
+                      100u,
+                      OS_OPT_TIME_HMSM_STRICT,
+                      &err);
+
+        /*
+         * 아직도 PIR 입력이 HIGH일 때만 진짜 감지로 인정
+         */
+        if (GPIO_ReadInputDataBit(PIR_GPIO_PORT, PIR_GPIO_PIN) == Bit_RESET) {
+            continue;
+        }
 
         OSMutexPend(&AppModeMutex,
                     0u,
@@ -311,10 +370,16 @@ static void AppTaskSecurity(void *p_arg)
                     &err);
 
         if (mode_snapshot == APP_MODE_OUT) {
+            AppPirCount++;
+            AppPirDetected = DEF_TRUE;
+
             AppTrace("[ALERT][SECURITY] Intrusion detected in OUT mode\r\n");
             AppEventPost(APP_EVENT_INTRUSION, 0u);
         } else {
-            AppTrace("[INFO][SECURITY] PIR ignored in HOME/EMERGENCY mode\r\n");
+            /*
+             * HOME/EMERGENCY에서는 정상 움직임 또는 이미 비상상태이므로 무시
+             * 로그 도배 방지를 위해 출력하지 않음
+             */
         }
     }
 }
@@ -415,16 +480,36 @@ static void AppTaskState(void *p_arg)
             break;
 
         case APP_EVENT_GAS:
+            if (AppMode != APP_MODE_EMERGENCY) {
+                AppPrevMode = AppMode;
+                AppMode = APP_MODE_EMERGENCY;
+                AppEmergencyActive = DEF_TRUE;
+                AppEmergencyReason = APP_EMG_GAS;
+
+                AppTrace("[ALERT][STATE] Mode changed: EMERGENCY - GAS\r\n");
+            }
+            break;
+
         case APP_EVENT_FLAME:
+            if (AppMode != APP_MODE_EMERGENCY) {
+                AppPrevMode = AppMode;
+                AppMode = APP_MODE_EMERGENCY;
+                AppEmergencyActive = DEF_TRUE;
+                AppEmergencyReason = APP_EMG_FLAME;
+
+                AppTrace("[ALERT][STATE] Mode changed: EMERGENCY - FLAME\r\n");
+            }
+            break;
+
         case APP_EVENT_INTRUSION:
             if (AppMode != APP_MODE_EMERGENCY) {
                 AppPrevMode = AppMode;
+                AppMode = APP_MODE_EMERGENCY;
+                AppEmergencyActive = DEF_TRUE;
+                AppEmergencyReason = APP_EMG_INTRUSION;
+
+                AppTrace("[ALERT][STATE] Mode changed: EMERGENCY - INTRUSION\r\n");
             }
-
-            AppMode = APP_MODE_EMERGENCY;
-            AppEmergencyActive = DEF_TRUE;
-
-            AppTrace("[ALERT][STATE] Mode changed: EMERGENCY\r\n");
             break;
 
         case APP_EVENT_REQ_CLEAR:
@@ -432,6 +517,7 @@ static void AppTaskState(void *p_arg)
                 if (AppDangerStillActive() == DEF_FALSE) {
                     AppMode = AppPrevMode;
                     AppEmergencyActive = DEF_FALSE;
+                    AppEmergencyReason = APP_EMG_NONE;
                     AppTrace("[INFO][STATE] Emergency cleared\r\n");
                 } else {
                     AppTrace("[WARN][STATE] Clear rejected: danger still active\r\n");
@@ -486,22 +572,82 @@ static void AppTaskUsart(void *p_arg)
 static void AppTaskOutput(void *p_arg)
 {
     OS_ERR      err;
-    CPU_BOOLEAN blink = DEF_FALSE;
+    CPU_BOOLEAN servo_toggle = DEF_FALSE;
+    CPU_INT08U  servo_tick = 0u;
 
     (void)p_arg;
 
     while (DEF_TRUE) {
         if (AppMode == APP_MODE_EMERGENCY) {
-            blink = (blink == DEF_TRUE) ? DEF_FALSE : DEF_TRUE;
 
-            if (blink == DEF_TRUE) {
-                GPIO_SetBits(LED_GPIO_PORT, LED_ALARM_PIN);
-                GPIO_SetBits(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN);
+            /*
+             * Emergency common:
+             * - Buzzer ON
+             * - Power cut LED RED ON
+             */
+            GPIO_SetBits(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN);
+
+            GPIO_SetBits  (POWER_LED_GPIO_PORT, POWER_LED_CUT_RED_PIN);
+            GPIO_ResetBits(POWER_LED_GPIO_PORT, POWER_LED_NORMAL_GREEN_PIN);
+
+            if (AppEmergencyReason == APP_EMG_FLAME) {
+                /*
+                 * FLAME:
+                 * - Power cut ON
+                 * - Gas state remains normal
+                 * - Servo sprinkler motion
+                 */
+                GPIO_ResetBits(GAS_LED_GPIO_PORT, GAS_LED_CUT_RED_PIN);
+                GPIO_SetBits  (GAS_LED_GPIO_PORT, GAS_LED_NORMAL_GREEN_PIN);
+
+                servo_tick++;
+
+                if (servo_tick >= 3u) {
+                    servo_tick = 0u;
+
+                    servo_toggle = (servo_toggle == DEF_TRUE)
+                                   ? DEF_FALSE
+                                   : DEF_TRUE;
+
+                    if (servo_toggle == DEF_TRUE) {
+                        AppServoSetAngle(30u);
+                    } else {
+                        AppServoSetAngle(150u);
+                    }
+                }
+
+            } else if (AppEmergencyReason == APP_EMG_GAS) {
+                /*
+                 * GAS:
+                 * - Power cut ON
+                 * - Gas cut ON
+                 * - Servo stopped
+                 */
+                GPIO_SetBits  (GAS_LED_GPIO_PORT, GAS_LED_CUT_RED_PIN);
+                GPIO_ResetBits(GAS_LED_GPIO_PORT, GAS_LED_NORMAL_GREEN_PIN);
+
+                servo_tick = 0u;
+                servo_toggle = DEF_FALSE;
+                AppServoSetAngle(0u);
+
             } else {
-                GPIO_ResetBits(LED_GPIO_PORT, LED_ALARM_PIN);
-                GPIO_ResetBits(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN);
+                /*
+                 * INTRUSION or unknown emergency:
+                 * - Buzzer only
+                 * - Keep power cut LED ON because OUT mode is power-cut concept
+                 * - Gas remains normal
+                 */
+                GPIO_ResetBits(GAS_LED_GPIO_PORT, GAS_LED_CUT_RED_PIN);
+                GPIO_SetBits  (GAS_LED_GPIO_PORT, GAS_LED_NORMAL_GREEN_PIN);
+
+                servo_tick = 0u;
+                servo_toggle = DEF_FALSE;
+                AppServoSetAngle(0u);
             }
+
         } else {
+            servo_tick = 0u;
+            servo_toggle = DEF_FALSE;
             AppApplyOutputs();
         }
 
@@ -564,6 +710,7 @@ static void AppObjCreate(void)
 
     AppMode = APP_MODE_HOME;
     AppPrevMode = APP_MODE_HOME;
+    AppEmergencyReason = APP_EMG_NONE;
     AppEmergencyActive = DEF_FALSE;
     AppPirDetected = DEF_FALSE;
 
@@ -695,31 +842,79 @@ static void AppGpioInit(void)
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_SYSCFG,
                            ENABLE);
 
+    /*
+     * LED output
+     */
     gpio.GPIO_Mode  = GPIO_Mode_OUT;
     gpio.GPIO_OType = GPIO_OType_PP;
     gpio.GPIO_Speed = GPIO_Speed_2MHz;
     gpio.GPIO_PuPd  = GPIO_PuPd_NOPULL;
-    gpio.GPIO_Pin   = LED_ALARM_PIN | LED_POWER_PIN | LED_STATUS_PIN;
-    GPIO_Init(LED_GPIO_PORT, &gpio);
 
-    /* GAS: PA0 */
-    gpio.GPIO_Pin = GAS_GPIO_PIN;
+    /* Power LED: PB8, PB9 */
+    gpio.GPIO_Pin = POWER_LED_CUT_RED_PIN |
+                    POWER_LED_NORMAL_GREEN_PIN;
+    GPIO_Init(POWER_LED_GPIO_PORT, &gpio);
+
+    /* Gas LED: PA6, PA7 */
+    gpio.GPIO_Pin = GAS_LED_CUT_RED_PIN |
+                    GAS_LED_NORMAL_GREEN_PIN;
+    GPIO_Init(GAS_LED_GPIO_PORT, &gpio);
+
+    /*
+     * Buzzer output
+     */
+    gpio.GPIO_Pin = BUZZER_GPIO_PIN;
+    GPIO_Init(BUZZER_GPIO_PORT, &gpio);
+
+    /*
+     * Sensor inputs
+     */
+    gpio.GPIO_Mode  = GPIO_Mode_IN;
+    gpio.GPIO_OType = GPIO_OType_PP;
+    gpio.GPIO_Speed = GPIO_Speed_2MHz;
+
+    /*
+     * GAS: D8 / PF12
+     * 테스트 중 선을 뺐을 때 floating 방지용 풀다운
+     */
+    gpio.GPIO_PuPd = GPIO_PuPd_DOWN;
+    gpio.GPIO_Pin  = GAS_GPIO_PIN;
     GPIO_Init(GAS_GPIO_PORT, &gpio);
 
-    /* FLAME: PF15 / D2 */
-    gpio.GPIO_Pin = FLAME_GPIO_PIN;
+    /*
+     * FLAME: D2 / PF15
+     */
+    gpio.GPIO_PuPd = GPIO_PuPd_NOPULL;
+    gpio.GPIO_Pin  = FLAME_GPIO_PIN;
     GPIO_Init(FLAME_GPIO_PORT, &gpio);
 
-    /* PIR: PF14 / D4 */
-    gpio.GPIO_Pin = PIR_GPIO_PIN;
+    /*
+     * PIR: D4 / PF14
+     * OUT 선을 뺐을 때 floating 방지
+     */
+    gpio.GPIO_PuPd = GPIO_PuPd_DOWN;
+    gpio.GPIO_Pin  = PIR_GPIO_PIN;
     GPIO_Init(PIR_GPIO_PORT, &gpio);
 
-    gpio.GPIO_PuPd = GPIO_PuPd_NOPULL;
-    gpio.GPIO_Pin  = BTN_GPIO_PIN;
+    /*
+     * User button input: PC13
+     */
+    gpio.GPIO_Mode  = GPIO_Mode_IN;
+    gpio.GPIO_PuPd  = GPIO_PuPd_DOWN;
+    gpio.GPIO_Pin   = BTN_GPIO_PIN;
     GPIO_Init(BTN_GPIO_PORT, &gpio);
 
-    GPIO_ResetBits(LED_GPIO_PORT, LED_ALARM_PIN | LED_STATUS_PIN);
-    GPIO_SetBits(LED_GPIO_PORT, LED_POWER_PIN);
+    /* 초기 HOME 상태:
+     * 전력 정상 초록 ON
+     * 가스 정상 초록 ON
+     * 차단 빨강들은 OFF
+     */
+    GPIO_ResetBits(POWER_LED_GPIO_PORT, POWER_LED_CUT_RED_PIN);
+    GPIO_SetBits  (POWER_LED_GPIO_PORT, POWER_LED_NORMAL_GREEN_PIN);
+
+    GPIO_ResetBits(GAS_LED_GPIO_PORT, GAS_LED_CUT_RED_PIN);
+    GPIO_SetBits  (GAS_LED_GPIO_PORT, GAS_LED_NORMAL_GREEN_PIN);
+
     GPIO_ResetBits(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN);
 }
 
@@ -761,41 +956,22 @@ static void AppExtiInit(void)
     exti.EXTI_Line    = BTN_EXTI_LINE;
     EXTI_Init(&exti);
 
-    BSP_IntVectSet(BSP_INT_ID_EXTI0,
-                   AppExti0ISR);
-
-    BSP_IntVectSet(BSP_INT_ID_EXTI1,
-                   AppExti1ISR);
-
-    BSP_IntVectSet(BSP_INT_ID_EXTI2,
-                   AppExti2ISR);
-
     BSP_IntVectSet(BSP_INT_ID_EXTI15_10,
                    AppExti15_10ISR);
-
-    BSP_IntPrioSet(BSP_INT_ID_EXTI0,
-                   5u);
-
-    BSP_IntPrioSet(BSP_INT_ID_EXTI1,
-                   5u);
-
-    BSP_IntPrioSet(BSP_INT_ID_EXTI2,
-                   5u);
 
     BSP_IntPrioSet(BSP_INT_ID_EXTI15_10,
                    5u);
 
-    BSP_IntEn(BSP_INT_ID_EXTI0);
-    BSP_IntEn(BSP_INT_ID_EXTI1);
-    BSP_IntEn(BSP_INT_ID_EXTI2);
     BSP_IntEn(BSP_INT_ID_EXTI15_10);
 }
 
 /* ---------------- ISR ---------------- */
-static void AppExti0ISR(void)
+
+static void AppExti15_10ISR(void)
 {
     OS_ERR err;
 
+    /* GAS: PF12 / D8 */
     if (EXTI_GetITStatus(GAS_EXTI_LINE) != RESET) {
         EXTI_ClearITPendingBit(GAS_EXTI_LINE);
 
@@ -804,30 +980,6 @@ static void AppExti0ISR(void)
                    OS_OPT_POST_FLAG_SET,
                    &err);
     }
-}
-
-static void AppExti1ISR(void)
-{
-    OS_ERR err;
-
-    if (EXTI_GetITStatus(FLAME_EXTI_LINE) != RESET) {
-        EXTI_ClearITPendingBit(FLAME_EXTI_LINE);
-
-        OSFlagPost(&AppEmergencyFlags,
-                   APP_FLAG_FLAME,
-                   OS_OPT_POST_FLAG_SET,
-                   &err);
-    }
-}
-
-static void AppExti2ISR(void)
-{
-
-}
-
-static void AppExti15_10ISR(void)
-{
-    OS_ERR err;
 
     /* FLAME: PF15 / D2 */
     if (EXTI_GetITStatus(FLAME_EXTI_LINE) != RESET) {
@@ -923,51 +1075,83 @@ static void AppPrintStatus(void)
 static void AppApplyOutputs(void)
 {
     if (AppMode == APP_MODE_HOME) {
-        AppAlarmOff();
-        AppPowerOn();
-        GPIO_ResetBits(LED_GPIO_PORT, LED_STATUS_PIN);
+        /*
+         * HOME:
+         * Power normal, Gas normal
+         */
+        GPIO_ResetBits(POWER_LED_GPIO_PORT, POWER_LED_CUT_RED_PIN);
+        GPIO_SetBits  (POWER_LED_GPIO_PORT, POWER_LED_NORMAL_GREEN_PIN);
+
+        GPIO_ResetBits(GAS_LED_GPIO_PORT, GAS_LED_CUT_RED_PIN);
+        GPIO_SetBits  (GAS_LED_GPIO_PORT, GAS_LED_NORMAL_GREEN_PIN);
+
+        GPIO_ResetBits(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN);
         AppServoSetAngle(0u);
+
     } else if (AppMode == APP_MODE_OUT) {
-        AppAlarmOff();
-        AppPowerCut();
-        GPIO_SetBits(LED_GPIO_PORT, LED_STATUS_PIN);
+        /*
+         * OUT:
+         * Power cut, Gas normal
+         */
+        GPIO_SetBits  (POWER_LED_GPIO_PORT, POWER_LED_CUT_RED_PIN);
+        GPIO_ResetBits(POWER_LED_GPIO_PORT, POWER_LED_NORMAL_GREEN_PIN);
+
+        GPIO_ResetBits(GAS_LED_GPIO_PORT, GAS_LED_CUT_RED_PIN);
+        GPIO_SetBits  (GAS_LED_GPIO_PORT, GAS_LED_NORMAL_GREEN_PIN);
+
+        GPIO_ResetBits(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN);
         AppServoSetAngle(0u);
+
     } else {
-        AppAlarmOn();
-        AppPowerCut();
-        GPIO_SetBits(LED_GPIO_PORT, LED_STATUS_PIN);
-        AppServoSetAngle(90u);
+        /*
+         * EMERGENCY initial output.
+         * Continuous emergency output is handled by AppTaskOutput().
+         */
+        GPIO_SetBits  (POWER_LED_GPIO_PORT, POWER_LED_CUT_RED_PIN);
+        GPIO_ResetBits(POWER_LED_GPIO_PORT, POWER_LED_NORMAL_GREEN_PIN);
+
+        GPIO_SetBits(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN);
+
+        if (AppEmergencyReason == APP_EMG_GAS) {
+            GPIO_SetBits  (GAS_LED_GPIO_PORT, GAS_LED_CUT_RED_PIN);
+            GPIO_ResetBits(GAS_LED_GPIO_PORT, GAS_LED_NORMAL_GREEN_PIN);
+            AppServoSetAngle(0u);
+
+        } else if (AppEmergencyReason == APP_EMG_FLAME) {
+            GPIO_ResetBits(GAS_LED_GPIO_PORT, GAS_LED_CUT_RED_PIN);
+            GPIO_SetBits  (GAS_LED_GPIO_PORT, GAS_LED_NORMAL_GREEN_PIN);
+            AppServoSetAngle(90u);
+
+        } else {
+            GPIO_ResetBits(GAS_LED_GPIO_PORT, GAS_LED_CUT_RED_PIN);
+            GPIO_SetBits  (GAS_LED_GPIO_PORT, GAS_LED_NORMAL_GREEN_PIN);
+            AppServoSetAngle(0u);
+        }
     }
 }
 
 static void AppAlarmOn(void)
 {
-    GPIO_SetBits(LED_GPIO_PORT,
-                 LED_ALARM_PIN);
-
     GPIO_SetBits(BUZZER_GPIO_PORT,
                  BUZZER_GPIO_PIN);
 }
 
 static void AppAlarmOff(void)
 {
-    GPIO_ResetBits(LED_GPIO_PORT,
-                   LED_ALARM_PIN);
-
     GPIO_ResetBits(BUZZER_GPIO_PORT,
                    BUZZER_GPIO_PIN);
 }
 
 static void AppPowerCut(void)
 {
-    GPIO_ResetBits(LED_GPIO_PORT,
-                   LED_POWER_PIN);
+    GPIO_SetBits  (POWER_LED_GPIO_PORT, POWER_LED_CUT_RED_PIN);
+    GPIO_ResetBits(POWER_LED_GPIO_PORT, POWER_LED_NORMAL_GREEN_PIN);
 }
 
 static void AppPowerOn(void)
 {
-    GPIO_SetBits(LED_GPIO_PORT,
-                 LED_POWER_PIN);
+    GPIO_ResetBits(POWER_LED_GPIO_PORT, POWER_LED_CUT_RED_PIN);
+    GPIO_SetBits  (POWER_LED_GPIO_PORT, POWER_LED_NORMAL_GREEN_PIN);
 }
 
 static void AppServoSetAngle(CPU_INT08U degree)
@@ -1137,7 +1321,7 @@ static void Setup_Servo_PWM(void)
     /* TIM1 CH1 PWM mode */
     oc_init.TIM_OCMode      = TIM_OCMode_PWM1;
     oc_init.TIM_OutputState = TIM_OutputState_Enable;
-    oc_init.TIM_Pulse       = 1000; 
+    oc_init.TIM_Pulse       = 1000;
     oc_init.TIM_OCPolarity  = TIM_OCPolarity_High;
     TIM_OC1Init(TIM1, &oc_init);
 
