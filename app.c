@@ -147,10 +147,6 @@ static CPU_BOOLEAN AppUsartTryGetLine(CPU_CHAR *buf, CPU_INT16U buf_len);
 static CPU_BOOLEAN AppStrEq  (const CPU_CHAR *a, const CPU_CHAR *b);
 
 static void AppApplyOutputs  (void);
-static void AppAlarmOn       (void);
-static void AppAlarmOff      (void);
-static void AppPowerCut      (void);
-static void AppPowerOn       (void);
 static void AppServoSetAngle (CPU_INT08U degree);
 static CPU_BOOLEAN AppDangerStillActive(void);
 
@@ -664,7 +660,6 @@ static void AppTaskOutput(void *p_arg)
 static void AppTaskMonitor(void *p_arg)
 {
     OS_ERR err;
-    BitAction flame_raw;
 
     (void)p_arg;
 
@@ -1128,30 +1123,6 @@ static void AppApplyOutputs(void)
             AppServoSetAngle(0u);
         }
     }
-}
-
-static void AppAlarmOn(void)
-{
-    GPIO_SetBits(BUZZER_GPIO_PORT,
-                 BUZZER_GPIO_PIN);
-}
-
-static void AppAlarmOff(void)
-{
-    GPIO_ResetBits(BUZZER_GPIO_PORT,
-                   BUZZER_GPIO_PIN);
-}
-
-static void AppPowerCut(void)
-{
-    GPIO_SetBits  (POWER_LED_GPIO_PORT, POWER_LED_CUT_RED_PIN);
-    GPIO_ResetBits(POWER_LED_GPIO_PORT, POWER_LED_NORMAL_GREEN_PIN);
-}
-
-static void AppPowerOn(void)
-{
-    GPIO_ResetBits(POWER_LED_GPIO_PORT, POWER_LED_CUT_RED_PIN);
-    GPIO_SetBits  (POWER_LED_GPIO_PORT, POWER_LED_NORMAL_GREEN_PIN);
 }
 
 static void AppServoSetAngle(CPU_INT08U degree)
