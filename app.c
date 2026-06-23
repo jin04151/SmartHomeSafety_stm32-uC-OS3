@@ -663,11 +663,38 @@ static void AppTaskOutput(void *p_arg)
 /* ---------------- Monitor task ---------------- */
 static void AppTaskMonitor(void *p_arg)
 {
-    OS_ERR err;
+    OS_ERR      err;
+    BitAction   pir_raw;
+    BitAction   last_pir_raw = Bit_RESET;
+    CPU_BOOLEAN first = DEF_TRUE;
+    CPU_INT08U  tick = 0u;
 
     (void)p_arg;
 
     while (DEF_TRUE) {
+        pir_raw = GPIO_ReadInputDataBit(PIR_GPIO_PORT, PIR_GPIO_PIN);
+
+        /*
+         * 100ms마다 확인.
+         * raw 값이 바뀌면 즉시 출력.
+         * 안 바뀌어도 1초마다 한 번 출력.
+         */
+        tick++;
+
+        if ((first == DEF_TRUE) ||
+            (pir_raw != last_pir_raw) ||
+            (tick >= 10u)) {
+
+            tick = 0u;
+            first = DEF_FALSE;
+            last_pir_raw = pir_raw;
+
+            if (pir_raw == Bit_SET) {
+                AppTrace("[MONITOR] PIR raw = HIGH\r\n");
+            } else {
+                AppTrace("[MONITOR] PIR raw = LOW\r\n");
+            }
+        }
 
         OSTimeDlyHMSM(0u,
                       0u,
