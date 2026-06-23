@@ -338,18 +338,16 @@ static void AppTaskSecurity(void *p_arg)
                   &err);
 
         /*
-         * 간단한 PIR 안정화/노이즈 필터
+         * 민감한 센서 튐 방지:
+         * 감지 직후 바로 처리하지 않고 800ms 뒤에도 HIGH인지 확인
          */
         OSTimeDlyHMSM(0u,
                       0u,
                       0u,
-                      100u,
+                      800u,
                       OS_OPT_TIME_HMSM_STRICT,
                       &err);
 
-        /*
-         * 아직도 PIR 입력이 HIGH일 때만 진짜 감지로 인정
-         */
         if (GPIO_ReadInputDataBit(PIR_GPIO_PORT, PIR_GPIO_PIN) == Bit_RESET) {
             continue;
         }
@@ -372,11 +370,6 @@ static void AppTaskSecurity(void *p_arg)
 
             AppTrace("[ALERT][SECURITY] Intrusion detected in OUT mode\r\n");
             AppEventPost(APP_EVENT_INTRUSION, 0u);
-        } else {
-            /*
-             * HOME/EMERGENCY에서는 정상 움직임 또는 이미 비상상태이므로 무시
-             * 로그 도배 방지를 위해 출력하지 않음
-             */
         }
     }
 }
