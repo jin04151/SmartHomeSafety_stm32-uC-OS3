@@ -485,7 +485,7 @@ static void AppTaskState(void *p_arg)
                 AppEmergencyReason = APP_EMG_GAS;
 
                 AppTrace("[ALERT][STATE] Mode changed: EMERGENCY - GAS\r\n");
-                AppBtSend("[ALERT] GAS detected at home!\r\n");
+                //AppBtSend("[ALERT] GAS detected at home!\r\n");
             }
             break;
 
@@ -497,7 +497,7 @@ static void AppTaskState(void *p_arg)
                 AppEmergencyReason = APP_EMG_FLAME;
 
                 AppTrace("[ALERT][STATE] Mode changed: EMERGENCY - FLAME\r\n");
-                AppBtSend("[ALERT] FIRE detected at home!\r\n");
+                //AppBtSend("[ALERT] FIRE detected at home!\r\n");
             }
             break;
 
@@ -509,7 +509,7 @@ static void AppTaskState(void *p_arg)
                 AppEmergencyReason = APP_EMG_INTRUSION;
 
                 AppTrace("[ALERT][STATE] Mode changed: EMERGENCY - INTRUSION\r\n");
-                AppBtSend("[ALERT] Intrusion detected while you are out!\r\n");
+                //AppBtSend("[ALERT] Intrusion detected while you are out!\r\n");
             }
             break;
 
