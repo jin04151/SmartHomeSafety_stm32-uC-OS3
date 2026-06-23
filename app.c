@@ -82,8 +82,8 @@
 #define GAS_LED_NORMAL_GREEN_PIN         GPIO_Pin_7       /* D11 / PA7 */
 
 
-#define BUZZER_GPIO_PORT                 GPIOD
-#define BUZZER_GPIO_PIN                  GPIO_Pin_12
+#define BUZZER_GPIO_PORT                 GPIOE
+#define BUZZER_GPIO_PIN                  GPIO_Pin_13    /* D3 / PE13 */
 
 #define APP_BUTTON_DEBOUNCE_MS           50u
 
@@ -828,11 +828,12 @@ static void AppGpioInit(void)
     GPIO_InitTypeDef gpio;
 
     RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA |
-                           RCC_AHB1Periph_GPIOB |
-                           RCC_AHB1Periph_GPIOC |
-                           RCC_AHB1Periph_GPIOD |
-                           RCC_AHB1Periph_GPIOF,
-                           ENABLE);
+                       RCC_AHB1Periph_GPIOB |
+                       RCC_AHB1Periph_GPIOC |
+                       RCC_AHB1Periph_GPIOD |
+                       RCC_AHB1Periph_GPIOE |
+                       RCC_AHB1Periph_GPIOF,
+                       ENABLE);
 
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_SYSCFG,
                            ENABLE);
