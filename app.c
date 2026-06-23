@@ -877,9 +877,10 @@ static void AppGpioInit(void)
     GPIO_Init(GAS_GPIO_PORT, &gpio);
 
     /*
-     * FLAME: D2 / PF15
-     */
-    gpio.GPIO_PuPd = GPIO_PuPd_NOPULL;
+    * FLAME: D2 / PF15
+    * 테스트 중 선을 뺐을 때 floating 방지
+    */
+    gpio.GPIO_PuPd = GPIO_PuPd_DOWN;
     gpio.GPIO_Pin  = FLAME_GPIO_PIN;
     GPIO_Init(FLAME_GPIO_PORT, &gpio);
 
