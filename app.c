@@ -1309,30 +1309,35 @@ static void Setup_Servo_PWM(void)
     TIM_CtrlPWMOutputs(TIM1, ENABLE);
     TIM_Cmd(TIM1, ENABLE);
 }
-/* ---------------- USART6 (HC-06 Bluetooth) SETUP ---------------- */
+/* ---------------- USART6 (HC-06 Bluetooth) SETUP ----------------
+ * HC-06 TXD -> D0 / PG9  / USART6_RX
+ * HC-06 RXD -> D1 / PG14 / USART6_TX
+ */
 static void Setup_Usart6_BT(void)
 {
     GPIO_InitTypeDef  gpio_init  = {0};
     USART_InitTypeDef usart_init = {0};
 
-    RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC, ENABLE);
     RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOG, ENABLE);
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART6, ENABLE);
 
-    /* PC6 = USART6_TX */
-    GPIO_PinAFConfig(GPIOC, GPIO_PinSource6, GPIO_AF_USART6);
-    gpio_init.GPIO_Pin   = GPIO_Pin_6;
+    /*
+     * D0  = PG9  = USART6_RX
+     * D1  = PG14 = USART6_TX
+     */
+    GPIO_PinAFConfig(GPIOG, GPIO_PinSource9,  GPIO_AF_USART6);
+    GPIO_PinAFConfig(GPIOG, GPIO_PinSource14, GPIO_AF_USART6);
+
+    gpio_init.GPIO_Pin   = GPIO_Pin_9 | GPIO_Pin_14;
     gpio_init.GPIO_Mode  = GPIO_Mode_AF;
     gpio_init.GPIO_OType = GPIO_OType_PP;
     gpio_init.GPIO_PuPd  = GPIO_PuPd_UP;
     gpio_init.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_Init(GPIOC, &gpio_init);
-
-    /* PG9 = USART6_RX */
-    GPIO_PinAFConfig(GPIOG, GPIO_PinSource9, GPIO_AF_USART6);
-    gpio_init.GPIO_Pin = GPIO_Pin_9;
     GPIO_Init(GPIOG, &gpio_init);
 
+    /*
+     * HC-06 기본 baud는 보통 9600
+     */
     usart_init.USART_BaudRate            = 9600;
     usart_init.USART_WordLength          = USART_WordLength_8b;
     usart_init.USART_StopBits            = USART_StopBits_1;
