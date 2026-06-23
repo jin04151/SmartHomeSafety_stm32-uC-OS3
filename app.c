@@ -153,7 +153,6 @@ static CPU_BOOLEAN AppDangerStillActive(void);
 static void Setup_Usart3(void);
 static void Setup_Servo_PWM(void);
 static void Setup_Usart6_BT(void);
-static void AppBtSend(const CPU_CHAR *msg);
 
 /* ---------------- Kernel objects / globals ---------------- */
 static OS_TCB  AppTaskStartTCB;
@@ -1165,28 +1164,43 @@ static CPU_BOOLEAN AppDangerStillActive(void)
 static void AppTrace(const CPU_CHAR *msg)
 {
     while (*msg != '\0') {
+        /* Send log to PC via USART3 */
         while (USART_GetFlagStatus(USART3, USART_FLAG_TXE) == RESET) {
         }
         USART_SendData(USART3, (uint16_t)(*msg));
+
+        /* Send log to Bluetooth via USART6 simultaneously */
+        while (USART_GetFlagStatus(USART6, USART_FLAG_TXE) == RESET) {
+        }
+        USART_SendData(USART6, (uint16_t)(*msg));
+
         msg++;
     }
 }
 
 static CPU_BOOLEAN AppUsartTryGetLine(CPU_CHAR *buf, CPU_INT16U buf_len)
 {
-    static CPU_CHAR   rx_buf[APP_CMD_LINE_LEN];
+    static CPU_CHAR  rx_buf[APP_CMD_LINE_LEN];
     static CPU_INT16U ix = 0u;
 
-    CPU_CHAR ch;
+    CPU_CHAR ch = (CPU_CHAR)0;
+    CPU_BOOLEAN data_received = DEF_FALSE;
 
-    /*
-     * If your HW5 used a different USART, replace USART3 below.
-     */
-    if (USART_GetFlagStatus(USART3, USART_FLAG_RXNE) == RESET) {
-        return DEF_FALSE;
+    /* Check input from PC (USART3) */
+    if (USART_GetFlagStatus(USART3, USART_FLAG_RXNE) != RESET) {
+        ch = (CPU_CHAR)USART_ReceiveData(USART3);
+        data_received = DEF_TRUE;
+    }
+    /* Check input from Bluetooth (USART6) */
+    else if (USART_GetFlagStatus(USART6, USART_FLAG_RXNE) != RESET) {
+        ch = (CPU_CHAR)USART_ReceiveData(USART6);
+        data_received = DEF_TRUE;
     }
 
-    ch = (CPU_CHAR)USART_ReceiveData(USART3);
+    /* Return if no data is received from either channel */
+    if (data_received == DEF_FALSE) {
+        return DEF_FALSE;
+    }
 
     APP_TRACE_DBG(("%c", ch));
 
