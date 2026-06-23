@@ -152,7 +152,8 @@ static CPU_BOOLEAN AppDangerStillActive(void);
 
 static void Setup_Usart3(void);
 static void Setup_Servo_PWM(void);
-
+static void Setup_Usart6_BT(void);
+static void AppBtSend(const CPU_CHAR *msg);
 
 /* ---------------- Kernel objects / globals ---------------- */
 static OS_TCB  AppTaskStartTCB;
@@ -239,6 +240,7 @@ static void AppTaskStart(void *p_arg)
     AppExtiInit();
     Setup_Usart3();
     Setup_Servo_PWM();
+    Setup_Usart6_BT();
 	#if OS_CFG_STAT_TASK_EN > 0u
     OSStatTaskCPUUsageInit(&err);
 	#endif
@@ -483,6 +485,7 @@ static void AppTaskState(void *p_arg)
                 AppEmergencyReason = APP_EMG_GAS;
 
                 AppTrace("[ALERT][STATE] Mode changed: EMERGENCY - GAS\r\n");
+                AppBtSend("[ALERT] GAS detected at home!\r\n");
             }
             break;
 
@@ -494,6 +497,7 @@ static void AppTaskState(void *p_arg)
                 AppEmergencyReason = APP_EMG_FLAME;
 
                 AppTrace("[ALERT][STATE] Mode changed: EMERGENCY - FLAME\r\n");
+                AppBtSend("[ALERT] FIRE detected at home!\r\n");
             }
             break;
 
@@ -505,6 +509,7 @@ static void AppTaskState(void *p_arg)
                 AppEmergencyReason = APP_EMG_INTRUSION;
 
                 AppTrace("[ALERT][STATE] Mode changed: EMERGENCY - INTRUSION\r\n");
+                AppBtSend("[ALERT] Intrusion detected while you are out!\r\n");
             }
             break;
 
@@ -1303,4 +1308,48 @@ static void Setup_Servo_PWM(void)
 
     TIM_CtrlPWMOutputs(TIM1, ENABLE);
     TIM_Cmd(TIM1, ENABLE);
+}
+/* ---------------- USART6 (HC-06 Bluetooth) SETUP ---------------- */
+static void Setup_Usart6_BT(void)
+{
+    GPIO_InitTypeDef  gpio_init  = {0};
+    USART_InitTypeDef usart_init = {0};
+
+    RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC | RCC_AHB1Periph_GPIOG, ENABLE);
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART6, ENABLE);
+
+    /* PC6 = USART6_TX, PG9 = USART6_RX */
+    GPIO_PinAFConfig(GPIOC, GPIO_PinSource6, GPIO_AF_USART6);
+    GPIO_PinAFConfig(GPIOG, GPIO_PinSource9, GPIO_AF_USART6);
+
+    gpio_init.GPIO_Pin   = GPIO_Pin_6;
+    gpio_init.GPIO_Mode  = GPIO_Mode_AF;
+    gpio_init.GPIO_OType = GPIO_OType_PP;
+    gpio_init.GPIO_PuPd  = GPIO_PuPd_UP;
+    gpio_init.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOC, &gpio_init);
+
+    gpio_init.GPIO_Pin = GPIO_Pin_9;
+    GPIO_Init(GPIOG, &gpio_init);
+
+    usart_init.USART_BaudRate            = 9600;
+    usart_init.USART_WordLength          = USART_WordLength_8b;
+    usart_init.USART_StopBits            = USART_StopBits_1;
+    usart_init.USART_Parity              = USART_Parity_No;
+    usart_init.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+    usart_init.USART_Mode                = USART_Mode_Rx | USART_Mode_Tx;
+
+    USART_Init(USART6, &usart_init);
+    USART_Cmd(USART6, ENABLE);
+}
+
+/* ---------------- Bluetooth send helper ---------------- */
+static void AppBtSend(const CPU_CHAR *msg)
+{
+    while (*msg != '\0') {
+        while (USART_GetFlagStatus(USART6, USART_FLAG_TXE) == RESET) {
+        }
+        USART_SendData(USART6, (uint16_t)(*msg));
+        msg++;
+    }
 }
