@@ -663,7 +663,6 @@ static void AppTaskMonitor(void *p_arg)
     BitAction   pir_raw;
     BitAction   last_pir_raw = Bit_RESET;
     CPU_BOOLEAN first = DEF_TRUE;
-    CPU_INT08U  tick = 0u;
 
     (void)p_arg;
 
@@ -672,16 +671,12 @@ static void AppTaskMonitor(void *p_arg)
 
         /*
          * 100ms마다 확인.
-         * raw 값이 바뀌면 즉시 출력.
-         * 안 바뀌어도 1초마다 한 번 출력.
+         * 처음 1번 출력하고,
+         * 이후에는 PIR raw 값이 바뀔 때만 출력.
          */
-        tick++;
-
         if ((first == DEF_TRUE) ||
-            (pir_raw != last_pir_raw) ||
-            (tick >= 10u)) {
+            (pir_raw != last_pir_raw)) {
 
-            tick = 0u;
             first = DEF_FALSE;
             last_pir_raw = pir_raw;
 
