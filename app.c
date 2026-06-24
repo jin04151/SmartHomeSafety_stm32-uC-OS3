@@ -84,6 +84,7 @@
 
 #define BUZZER_GPIO_PORT                 GPIOE
 #define BUZZER_GPIO_PIN                  GPIO_Pin_13    /* D3 / PE13 */
+#define BUZZER_ACTIVE_LOW                1u
 
 #define APP_BUTTON_DEBOUNCE_MS           50u
 
@@ -149,6 +150,8 @@ static CPU_BOOLEAN AppStrEq  (const CPU_CHAR *a, const CPU_CHAR *b);
 static void AppApplyOutputs  (void);
 static void AppServoSetAngle (CPU_INT08U degree);
 static CPU_BOOLEAN AppDangerStillActive(void);
+static void AppBuzzerOn      (void);
+static void AppBuzzerOff     (void);
 
 static void Setup_Usart3(void);
 static void Setup_Servo_PWM(void);
@@ -578,7 +581,7 @@ static void AppTaskOutput(void *p_arg)
              * - Buzzer ON
              * - Power cut LED RED ON
              */
-            GPIO_SetBits(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN);
+            AppBuzzerOn();
 
             GPIO_SetBits  (POWER_LED_GPIO_PORT, POWER_LED_CUT_RED_PIN);
             GPIO_ResetBits(POWER_LED_GPIO_PORT, POWER_LED_NORMAL_GREEN_PIN);
@@ -881,10 +884,16 @@ static void AppGpioInit(void)
     GPIO_Init(GAS_LED_GPIO_PORT, &gpio);
 
     /*
-     * Buzzer output
-     */
+    * Buzzer output
+    * LOW trigger module이면 출력 모드로 바뀌는 순간 울릴 수 있으므로
+    * 먼저 OFF 상태를 ODR에 써두고 GPIO output으로 설정.
+    */
+    AppBuzzerOff();
+
     gpio.GPIO_Pin = BUZZER_GPIO_PIN;
     GPIO_Init(BUZZER_GPIO_PORT, &gpio);
+
+    AppBuzzerOff();
 
     /*
      * Sensor inputs
@@ -936,7 +945,7 @@ static void AppGpioInit(void)
     GPIO_ResetBits(GAS_LED_GPIO_PORT, GAS_LED_CUT_RED_PIN);
     GPIO_SetBits  (GAS_LED_GPIO_PORT, GAS_LED_NORMAL_GREEN_PIN);
 
-    GPIO_ResetBits(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN);
+    AppBuzzerOff();
 }
 
 static void AppExtiInit(void)
@@ -1106,7 +1115,7 @@ static void AppApplyOutputs(void)
         GPIO_ResetBits(GAS_LED_GPIO_PORT, GAS_LED_CUT_RED_PIN);
         GPIO_SetBits  (GAS_LED_GPIO_PORT, GAS_LED_NORMAL_GREEN_PIN);
 
-        GPIO_ResetBits(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN);
+        AppBuzzerOff();
         AppServoSetAngle(0u);
 
     } else if (AppMode == APP_MODE_OUT) {
@@ -1120,7 +1129,7 @@ static void AppApplyOutputs(void)
         GPIO_ResetBits(GAS_LED_GPIO_PORT, GAS_LED_CUT_RED_PIN);
         GPIO_SetBits  (GAS_LED_GPIO_PORT, GAS_LED_NORMAL_GREEN_PIN);
 
-        GPIO_ResetBits(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN);
+        AppBuzzerOff();
         AppServoSetAngle(0u);
 
     } else {
@@ -1131,7 +1140,7 @@ static void AppApplyOutputs(void)
         GPIO_SetBits  (POWER_LED_GPIO_PORT, POWER_LED_CUT_RED_PIN);
         GPIO_ResetBits(POWER_LED_GPIO_PORT, POWER_LED_NORMAL_GREEN_PIN);
 
-        GPIO_SetBits(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN);
+        AppBuzzerOn();
 
         if (AppEmergencyReason == APP_EMG_GAS) {
             GPIO_SetBits  (GAS_LED_GPIO_PORT, GAS_LED_CUT_RED_PIN);
@@ -1149,6 +1158,24 @@ static void AppApplyOutputs(void)
             AppServoSetAngle(0u);
         }
     }
+}
+
+static void AppBuzzerOn(void)
+{
+#if BUZZER_ACTIVE_LOW
+    GPIO_ResetBits(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN);   /* LOW = ON */
+#else
+    GPIO_SetBits(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN);     /* HIGH = ON */
+#endif
+}
+
+static void AppBuzzerOff(void)
+{
+#if BUZZER_ACTIVE_LOW
+    GPIO_SetBits(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN);     /* HIGH = OFF */
+#else
+    GPIO_ResetBits(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN);   /* LOW = OFF */
+#endif
 }
 
 static void AppServoSetAngle(CPU_INT08U degree)
