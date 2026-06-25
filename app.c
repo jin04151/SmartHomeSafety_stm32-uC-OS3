@@ -901,7 +901,7 @@ static void AppGpioInit(void)
      * GAS: D8 / PF12
      * 테스트 중 선을 뺐을 때 floating 방지용 풀다운
      */
-    gpio.GPIO_PuPd = GPIO_PuPd_DOWN;
+    gpio.GPIO_PuPd = GPIO_PuPd_UP;
     gpio.GPIO_Pin  = GAS_GPIO_PIN;
     GPIO_Init(GAS_GPIO_PORT, &gpio);
 
@@ -964,18 +964,21 @@ static void AppExtiInit(void)
                            PIR_EXTI_LINE |
                            BTN_EXTI_LINE);
 
-    exti.EXTI_Mode    = EXTI_Mode_Interrupt;
-    exti.EXTI_Trigger = EXTI_Trigger_Rising;
-    exti.EXTI_LineCmd = ENABLE;
+	exti.EXTI_Mode    = EXTI_Mode_Interrupt;
+	exti.EXTI_LineCmd = ENABLE;
 
-    exti.EXTI_Line = GAS_EXTI_LINE;
-    EXTI_Init(&exti);
+	/* GAS: active LOW → falling */
+	exti.EXTI_Trigger = EXTI_Trigger_Falling;
+	exti.EXTI_Line    = GAS_EXTI_LINE;
+	EXTI_Init(&exti);
 
-    exti.EXTI_Line = FLAME_EXTI_LINE;
-    EXTI_Init(&exti);
+	/* FLAME, PIR: rising 유지 */
+	exti.EXTI_Trigger = EXTI_Trigger_Rising;
+	exti.EXTI_Line    = FLAME_EXTI_LINE;
+	EXTI_Init(&exti);
 
-    exti.EXTI_Line = PIR_EXTI_LINE;
-    EXTI_Init(&exti);
+	exti.EXTI_Line    = PIR_EXTI_LINE;
+	EXTI_Init(&exti);
 
     exti.EXTI_Trigger = EXTI_Trigger_Falling;
     exti.EXTI_Line    = BTN_EXTI_LINE;
@@ -1075,6 +1078,8 @@ static void AppCmdParse(CPU_CHAR *line)
         AppEventPost(APP_EVENT_REQ_HOME, 0u);
     } else if (AppStrEq(line, "clear") == DEF_TRUE) {
         AppEventPost(APP_EVENT_REQ_CLEAR, 0u);
+    } else if (AppStrEq(line, "gas") == DEF_TRUE) {
+        AppEventPost(APP_EVENT_GAS, 0u);
     } else {
         AppTrace("[WARN][USART] Unknown command. Type help\r\n");
     }
@@ -1187,9 +1192,9 @@ static CPU_BOOLEAN AppDangerStillActive(void)
     CPU_BOOLEAN gas_on;
     CPU_BOOLEAN flame_on;
 
-    gas_on = (GPIO_ReadInputDataBit(GAS_GPIO_PORT, GAS_GPIO_PIN) == Bit_SET)
-             ? DEF_TRUE
-             : DEF_FALSE;
+    gas_on = (GPIO_ReadInputDataBit(GAS_GPIO_PORT, GAS_GPIO_PIN) == Bit_RESET)
+                 ? DEF_TRUE     /* active LOW: LOW = 가스 있음 */
+                 : DEF_FALSE;
 
     flame_on = (GPIO_ReadInputDataBit(FLAME_GPIO_PORT, FLAME_GPIO_PIN) == Bit_SET)
                ? DEF_TRUE
