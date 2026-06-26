@@ -587,12 +587,7 @@ static void AppTaskOutput(void *p_arg)
             GPIO_ResetBits(POWER_LED_GPIO_PORT, POWER_LED_NORMAL_GREEN_PIN);
 
             if (AppEmergencyReason == APP_EMG_FLAME) {
-                /*
-                 * FLAME:
-                 * - Power cut ON
-                 * - Gas state remains normal
-                 * - Servo sprinkler motion
-                 */
+         
                 GPIO_ResetBits(GAS_LED_GPIO_PORT, GAS_LED_CUT_RED_PIN);
                 GPIO_SetBits  (GAS_LED_GPIO_PORT, GAS_LED_NORMAL_GREEN_PIN);
 
@@ -602,8 +597,7 @@ static void AppTaskOutput(void *p_arg)
                     servo_tick = 0u;
 
                     servo_toggle = (servo_toggle == DEF_TRUE)
-                                   ? DEF_FALSE
-                                   : DEF_TRUE;
+                                   ? DEF_FALSE : DEF_TRUE;
 
                     if (servo_toggle == DEF_TRUE) {
                         AppServoSetAngle(30u);
